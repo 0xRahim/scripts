@@ -1,0 +1,262 @@
+// LIT Reimfx — Rewritten
+// @version=5
+indicator('LIT - Timing', overlay=true, max_labels_count=500, max_boxes_count=500)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════════════════
+HideTFAbove      = input.int(59, 'Hide Boxes on TF above (Minutes)', minval=15, maxval=120)
+HideTFAbove_asia = 60
+
+show_asia = input(true, 'Show Asian Session')
+show_lon  = input(true, 'Show London Session')
+show_nyt  = input(true, 'Show NY Session')
+
+asia_color      = input(color.new(color.rgb(152, 0, 255), 90), 'Asian Fill Color')
+asia_line_color = input(color.new(color.rgb(152, 0, 255), 70), 'Asian Line Color')
+lon_color       = input(color.new(color.rgb(67,  70, 81), 90), 'London Fill Color')
+nyt_color       = input(color.new(color.rgb(67,  70, 81), 90), 'NY Fill Color')
+
+i_displayLast = input(false, 'Display YHL/WHL on current bar only')
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TIMEFRAME HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+GetTFMinutes()   => (time - time[1]) / 60000
+
+TFIsCorrect      = GetTFMinutes() <= HideTFAbove
+TFIsCorrect_asia = GetTFMinutes() <= HideTFAbove_asia
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SESSION HIGH / LOW
+// ═══════════════════════════════════════════════════════════════════════════════
+GetSessionHighLow(session_active, start) =>
+    var float hh = high
+    var float ll = low
+    if session_active == 1
+        if high > hh or start
+            hh := high
+        if low < ll or start
+            ll := low
+    [hh, ll]
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SESSION BOX + LINES
+// ═══════════════════════════════════════════════════════════════════════════════
+CreateSessionBoxT(start_T, hours, session_active, h, l, fillColor, drawLines, lineColor) =>
+    if session_active == 1
+        int endShift = hours * 60 * 1000
+        b = box.new(
+             left         = start_T,
+             bottom       = l,
+             top          = h,
+             right        = start_T + endShift,
+             xloc         = xloc.bar_time,
+             bgcolor      = fillColor,
+             border_color = color.new(#000000, 100))
+        if session_active[1] == 1
+            box.delete(b[1])
+        if drawLines
+            float m = (h + l) / 2
+            hl = line.new(x1=start_T, y1=h, x2=start_T + endShift * 2, y2=h, xloc=xloc.bar_time, color=lineColor, width=1)
+            ml = line.new(x1=start_T, y1=m, x2=start_T + endShift * 2, y2=m, xloc=xloc.bar_time, color=lineColor, width=1)
+            ll = line.new(x1=start_T, y1=l, x2=start_T + endShift * 2, y2=l, xloc=xloc.bar_time, color=lineColor, width=1)
+            if session_active[1] == 1
+                line.delete(hl[1])
+                line.delete(ml[1])
+                line.delete(ll[1])
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SESSION DURATION (minutes expressed as ms multiplier)
+// ═══════════════════════════════════════════════════════════════════════════════
+var int asia_hours = 475
+var int lon_hours  = 60
+var int nyt_hours  = 60
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TIMEZONE BASE
+// ═══════════════════════════════════════════════════════════════════════════════
+string UTC_minus_7 = 'UTC-7'
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DST TRANSITION WINDOWS
+// ═══════════════════════════════════════════════════════════════════════════════
+// US DST: springs forward 2nd Sunday March, falls back 1st Sunday November
+// EU DST: springs forward last Sunday March, falls back last Sunday October
+
+// ── 2022 ──────────────────────────────────────────────────────────────────────
+start_22_summer     = timestamp(UTC_minus_7, 2022, 03, 26, 00, 00)
+end_22_summer       = timestamp(UTC_minus_7, 2022, 10, 29, 23, 59)
+start_22_dls_autumn = timestamp(UTC_minus_7, 2022, 10, 30, 00, 00)
+end_22_dls_autumn   = timestamp(UTC_minus_7, 2022, 11, 05, 23, 59)
+
+// ── 2023 ──────────────────────────────────────────────────────────────────────
+start_23_spring     = timestamp(UTC_minus_7, 2023, 03, 12, 00, 00)
+end_23_spring       = timestamp(UTC_minus_7, 2023, 03, 25, 23, 59)
+start_23_summer     = timestamp(UTC_minus_7, 2023, 03, 26, 00, 00)
+end_23_summer       = timestamp(UTC_minus_7, 2023, 10, 29, 23, 59)
+
+// ── 2024 ──────────────────────────────────────────────────────────────────────
+start_24_spring     = timestamp(UTC_minus_7, 2024, 03, 12, 00, 00)
+end_24_spring       = timestamp(UTC_minus_7, 2024, 03, 30, 23, 59)
+start_24_summer     = timestamp(UTC_minus_7, 2024, 03, 31, 00, 00)
+end_24_summer       = timestamp(UTC_minus_7, 2024, 10, 29, 23, 59)
+
+// ── 2025 ──────────────────────────────────────────────────────────────────────
+start_25_spring     = timestamp(UTC_minus_7, 2025, 03, 12, 00, 00)
+end_25_spring       = timestamp(UTC_minus_7, 2025, 03, 30, 23, 59)
+start_25_summer     = timestamp(UTC_minus_7, 2025, 03, 31, 00, 00)
+end_25_summer       = timestamp(UTC_minus_7, 2025, 10, 26, 23, 59)
+start_25_dls_autumn = timestamp(UTC_minus_7, 2025, 11, 02, 00, 00)  // FIXED: was day 37
+end_25_dls_autumn   = timestamp(UTC_minus_7, 2025, 11, 05, 23, 59)
+
+// ── 2026 ──────────────────────────────────────────────────────────────────────
+start_26_spring     = timestamp(UTC_minus_7, 2026, 03, 12, 00, 00)
+end_26_spring       = timestamp(UTC_minus_7, 2026, 03, 25, 23, 59)
+start_26_summer     = timestamp(UTC_minus_7, 2026, 03, 26, 00, 00)
+end_26_summer       = timestamp(UTC_minus_7, 2026, 10, 29, 23, 59)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FOREX vs NON-FOREX ASIA WINDOW
+// ═══════════════════════════════════════════════════════════════════════════════
+string asia_timing_14 = '1405-2200:123456'
+string asia_timing_15 = '1505-2300:123456'
+
+if syminfo.type != 'forex'
+    asia_timing_14 := '1505-2200:123456'
+    asia_timing_15 := '1605-2300:123456'
+    asia_hours     := 415
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SESSION TIME RESOLUTION
+// ─────────────────────────────────────────────────────────────────────────────
+//  Target IST times  →  UTC       →  UTC-7
+//  London  12:30        07:00        00:00   ✓
+//  NY      18:30        13:00        06:00   ✓
+// ═══════════════════════════════════════════════════════════════════════════════
+time_now = time
+
+// ── Winter defaults (FIXED: was 0100 London / 0700 NY) ────────────────────────
+t_asia = time(timeframe.period, asia_timing_15,    UTC_minus_7)
+t_ff   = time(timeframe.period, '0000-0100:23456', UTC_minus_7)
+t_lon  = time(timeframe.period, '0000-0100:23456', UTC_minus_7)  // 12:30 IST
+t_nyt  = time(timeframe.period, '0600-0700:23456', UTC_minus_7)  // 18:30 IST
+
+// ── Summer 2022 ───────────────────────────────────────────────────────────────
+if time_now >= start_22_summer and time_now <= end_22_summer
+    t_asia := time(timeframe.period, asia_timing_14,    UTC_minus_7)
+    t_ff   := time(timeframe.period, '2300-2401:23456', UTC_minus_7)
+    t_lon  := time(timeframe.period, '0000-0100:23456', UTC_minus_7)
+    t_nyt  := time(timeframe.period, '0600-0700:23456', UTC_minus_7)
+
+// ── Autumn DST 2022 ───────────────────────────────────────────────────────────
+if time_now >= start_22_dls_autumn and time_now <= end_22_dls_autumn
+    t_asia := time(timeframe.period, asia_timing_14,    UTC_minus_7)
+    t_nyt  := time(timeframe.period, '0600-0700:23456', UTC_minus_7)
+
+// ── Spring 2023 ───────────────────────────────────────────────────────────────
+if time_now >= start_23_spring and time_now <= end_23_spring
+    t_asia := time(timeframe.period, asia_timing_14,    UTC_minus_7)
+    t_nyt  := time(timeframe.period, '0600-0700:23456', UTC_minus_7)
+
+// ── Summer 2023 ───────────────────────────────────────────────────────────────
+if time_now >= start_23_summer and time_now <= end_23_summer
+    t_asia := time(timeframe.period, asia_timing_14,    UTC_minus_7)
+    t_lon  := time(timeframe.period, '0000-0100:23456', UTC_minus_7)
+    t_nyt  := time(timeframe.period, '0600-0700:23456', UTC_minus_7)
+
+// ── Spring 2024 ───────────────────────────────────────────────────────────────
+if time_now >= start_24_spring and time_now <= end_24_spring
+    t_asia := time(timeframe.period, asia_timing_14,    UTC_minus_7)
+    t_nyt  := time(timeframe.period, '0600-0700:23456', UTC_minus_7)
+
+// ── Summer 2024 ───────────────────────────────────────────────────────────────
+if time_now >= start_24_summer and time_now <= end_24_summer
+    t_asia := time(timeframe.period, asia_timing_14,    UTC_minus_7)
+    t_lon  := time(timeframe.period, '0000-0100:23456', UTC_minus_7)
+    t_nyt  := time(timeframe.period, '0600-0700:23456', UTC_minus_7)
+
+// ── Spring 2025 ───────────────────────────────────────────────────────────────
+if time_now >= start_25_spring and time_now <= end_25_spring
+    t_asia := time(timeframe.period, asia_timing_14,    UTC_minus_7)
+    t_nyt  := time(timeframe.period, '0600-0700:23456', UTC_minus_7)
+
+// ── Summer 2025 ───────────────────────────────────────────────────────────────
+if time_now >= start_25_summer and time_now <= end_25_summer
+    t_asia := time(timeframe.period, asia_timing_14,    UTC_minus_7)
+    t_lon  := time(timeframe.period, '0000-0100:23456', UTC_minus_7)
+    t_nyt  := time(timeframe.period, '0600-0700:23456', UTC_minus_7)
+
+// ── Autumn DST 2025 (FIXED: was day 37 → Nov 2) ───────────────────────────────
+if time_now >= start_25_dls_autumn and time_now <= end_25_dls_autumn
+    t_asia := time(timeframe.period, asia_timing_14,    UTC_minus_7)
+    t_nyt  := time(timeframe.period, '0600-0700:23456', UTC_minus_7)
+
+// ── Spring 2026 ───────────────────────────────────────────────────────────────
+if time_now >= start_26_spring and time_now <= end_26_spring
+    t_asia := time(timeframe.period, asia_timing_14,    UTC_minus_7)
+    t_nyt  := time(timeframe.period, '0600-0700:23456', UTC_minus_7)
+
+// ── Summer 2026 (NEW) ─────────────────────────────────────────────────────────
+if time_now >= start_26_summer and time_now <= end_26_summer
+    t_asia := time(timeframe.period, asia_timing_14,    UTC_minus_7)
+    t_lon  := time(timeframe.period, '0000-0100:23456', UTC_minus_7)
+    t_nyt  := time(timeframe.period, '0600-0700:23456', UTC_minus_7)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ACTIVE SESSION FLAGS
+// ═══════════════════════════════════════════════════════════════════════════════
+asia_session_active = TFIsCorrect_asia and show_asia ? not na(t_asia) ? 1 : 0 : 0
+lon_session_active  = TFIsCorrect      and show_lon  ? not na(t_lon)  ? 1 : 0 : 0
+nyt_session_active  = TFIsCorrect      and show_nyt  ? not na(t_nyt)  ? 1 : 0 : 0
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SESSION START FLAGS
+// ═══════════════════════════════════════════════════════════════════════════════
+bool asia_start = asia_session_active[1] == 0 and asia_session_active == 1
+bool lon_start  = lon_session_active[1]  == 0 and lon_session_active  == 1
+bool nyt_start  = nyt_session_active[1]  == 0 and nyt_session_active  == 1
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SESSION HIGHS & LOWS
+// ═══════════════════════════════════════════════════════════════════════════════
+[asia_h, asia_l] = GetSessionHighLow(asia_session_active, asia_start)
+[lon_h,  lon_l]  = GetSessionHighLow(lon_session_active,  lon_start)
+[nyt_h,  nyt_l]  = GetSessionHighLow(nyt_session_active,  nyt_start)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SESSION START TIMESTAMPS (persist across bars)
+// ═══════════════════════════════════════════════════════════════════════════════
+var int asia_time_start = na
+var int lon_time_start  = na
+var int nyt_time_start  = na
+
+asia_time_start := asia_start ? time : asia_time_start[1]
+lon_time_start  := lon_start  ? time : lon_time_start[1]
+nyt_time_start  := nyt_start  ? time : nyt_time_start[1]
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DRAW SESSION BOXES
+// ═══════════════════════════════════════════════════════════════════════════════
+CreateSessionBoxT(asia_time_start, asia_hours, asia_session_active, asia_h, asia_l, asia_color, true,  asia_line_color)
+CreateSessionBoxT(lon_time_start,  lon_hours,  lon_session_active,  lon_h,  lon_l,  lon_color,  false, #000000)
+CreateSessionBoxT(nyt_time_start,  nyt_hours,  nyt_session_active,  nyt_h,  nyt_l,  nyt_color,  false, #000000)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// YESTERDAY & WEEKLY HIGH / LOW / CLOSE
+// ═══════════════════════════════════════════════════════════════════════════════
+yesterdayHigh  = request.security(syminfo.tickerid, 'D', high[1],        lookahead=barmerge.lookahead_on)
+yesterdayLow   = request.security(syminfo.tickerid, 'D', low[1],         lookahead=barmerge.lookahead_on)
+yesterdayClose = request.security(syminfo.tickerid, 'D', close[1],       lookahead=barmerge.lookahead_on)
+weeklyHigh     = request.security(syminfo.tickerid, 'W', high[1],        lookahead=barmerge.lookahead_on)
+weeklyLow      = request.security(syminfo.tickerid, 'W', low[1],         lookahead=barmerge.lookahead_on)
+isLastBar      = request.security(syminfo.tickerid, '',  barstate.islast, lookahead=barmerge.lookahead_on)
+
+plotCondition(price) =>
+    i_displayLast ? isLastBar ? price : na : price
+
+plot(plotCondition(weeklyHigh),     'Weekly High',     color.new(color.green, 0), style=plot.style_circles, display=display.none)
+plot(plotCondition(weeklyLow),      'Weekly Low',      color.new(color.red,   0), style=plot.style_circles, display=display.none)
+plot(plotCondition(yesterdayHigh),  'Yesterday High',  color.rgb(48, 193, 236),   style=plot.style_circles, display=display.none)
+plot(plotCondition(yesterdayLow),   'Yesterday Low',   color.rgb(48, 193, 236),   style=plot.style_circles, display=display.none)
+plot(plotCondition(yesterdayClose), 'Day Open',        color.new(color.gray, 0),  style=plot.style_cross,   display=display.none)
